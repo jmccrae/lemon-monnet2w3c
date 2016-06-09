@@ -173,10 +173,16 @@ object monnet2w3c {
     }
 
 
-    def remapProperties(triple : Triple, maps : Map[String, Node]) = {
+    def remapProperties(triple : Triple, maps : Map[String, Node],
+      warnmsg : Option[String] = None) = {
       toLemon(triple.getPredicate()) match {
         case Some(p) =>
           if(maps contains p) {
+            warnmsg match {
+              case Some(m) =>
+                warn(triple, m)
+              case _ =>
+            }
             new Triple(triple.getSubject(), maps(p), triple.getObject())
           } else {
             triple
@@ -358,8 +364,6 @@ object monnet2w3c {
       //<http://lemon-model.net/lemon#incompatible>
       "incompatible" -> "Senses cannot be considered incompatible in OntoLex Lemon",
       //<http://lemon-model.net/lemon#property>
-      "property" -> "OntoLex Lemon has no collective property for lexico-syntactic properties",
-      //<http://lemon-model.net/lemon#PropertyValue>
       "property" -> "OntoLex Lemon has no class for lexico-syntactic property values",
       //<http://lemon-model.net/lemon#separator>
       "separator" -> "Separator not supported by OntoLex Lemon",
@@ -523,7 +527,13 @@ object monnet2w3c {
 
     def process(graph : Node, triple : Triple) {
       // First the properties that are just remapped
-      val t1 = remapObjects(remapProperties(triple, propMaps), objMaps)
+      val t1 = remapObjects(
+        remapProperties(
+          remapProperties(triple, propMaps), 
+          skosProps, Some("Semantic relations such as broader have been mapped to " +
+          "SKOS. You should considering using a LexicalConcept rather than placing " +
+          "semantic relations on a sense")),
+      objMaps)
 
       // The abstract form is now included in other form
       //<http://lemon-model.net/lemon#abstractForm>
