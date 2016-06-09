@@ -9,12 +9,12 @@ To compile the JAR use the [Scala Build Tool](http://www.scala-sbt.org/) as foll
 
     sbt assembly
 
-Or you can download the JAR from [my site](http://john.mccr.ae/monnet2w3c3-assembly-1.0.jar).
+Or you can download the JAR from [my site](http://john.mccr.ae/monnet2w3c-assembly-1.0.jar).
 
 The converter can be run with either of the following commands
 
     sbt run
-    java -jar target/scala-2.10/monnet2w3c3-assembly-1.0.jar
+    java -jar target/scala-2.10/monnet2w3c-assembly-1.0.jar
 
 ## Usage
 
