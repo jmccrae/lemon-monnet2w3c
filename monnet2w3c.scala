@@ -42,7 +42,7 @@ object monnet2w3c {
       } text("The target for the output in W3C OntoLex Lemon")
 
       opt[String]('f', "from") valueName("<inputFormat>") action {
-        (x, c) => c.copy(inputFormat = x)
+        (x, c) => c.copy(inputFormat = x.toUpperCase)
       } validate {
         x => if(RDF_LANGS contains x.toUpperCase) { success } 
              else { failure("Invalid input language (%s are supported)" 
@@ -50,7 +50,7 @@ object monnet2w3c {
       } text("The RDF serialization of the input")
 
       opt[String]('t', "to") valueName("<outputFormat>") action {
-        (x, c) => c.copy(outputFormat = x)
+        (x, c) => c.copy(outputFormat = x.toUpperCase)
       } validate {
         x => if(RDF_LANGS contains x.toUpperCase) { success } 
              else { failure("Invalid output language (%s are supported)" 
@@ -105,14 +105,16 @@ object monnet2w3c {
         "<%s>" format node.getURI()
       } else if(node.isBlank()) {
         "_:%s" format node.getBlankNodeLabel()
-      } else if(node.getLiteralLanguage() != null) {
+      } else if(node.getLiteralLanguage() != null &&
+                node.getLiteralLanguage() != "") {
         "\"%s\"@%s" format (node.getLiteralLexicalForm().
                               replaceAll("\"","\\\\\"").
                               replaceAll("\n","\\\\n").
                               replaceAll("\r","\\\\r"),
                             node.getLiteralLanguage())
-      } else if(node.getLiteralDatatypeURI() != null) {
-        "\"%s\"^^%s" format (node.getLiteralLexicalForm().
+      } else if(node.getLiteralDatatypeURI() != null &&
+                node.getLiteralDatatypeURI() != "http://www.w3.org/2001/XMLSchema#string") {
+        "\"%s\"^^<%s>" format (node.getLiteralLexicalForm().
                               replaceAll("\"","\\\\\"").
                               replaceAll("\n","\\\\n").
                               replaceAll("\r","\\\\r"),
@@ -139,8 +141,18 @@ object monnet2w3c {
     def base(base : String) {} 
     def start() {}
     def finish() {
+      while(!elements.isEmpty) {
+        val e = elements.values.iterator.next
+        val head = findHeadCE(e)
+        emitCEUnchanged(head)
+      }
       if(model != null) {
-        RDFDataMgr.write(out, model, lang)
+        try {
+          RDFDataMgr.write(out, model, lang)
+        } catch {
+          case x : org.apache.jena.riot.RiotException =>
+            RDFDataMgr.write(out, model.getGraph(null), lang)
+        }
       }
       try {
         out.flush
@@ -414,6 +426,7 @@ object monnet2w3c {
       head : Node)
 
     case class ComponentElement(
+      graph : Node,
       node : Node,
       next : Node,
       value : Node)
@@ -445,11 +458,22 @@ object monnet2w3c {
       }
     }
 
+    def emitCEUnchanged(cl : ComponentElement) {
+      emit(cl.graph, new Triple(cl.node, rdf.rest, cl.next))
+      emit(cl.graph, new Triple(cl.node, rdf.first, cl.value))
+      elements.remove(cl.node)
+      elements.get(cl.next) match {
+        case Some(n) =>
+          emitCEUnchanged(n)
+        case None =>
+      }
+    }
+
     def emitCL(cl : ComponentList) = {
       componentLists.remove(cl.source)
       def emitChain(ce : ComponentElement, idx : Int) {
         emit(cl.graph, new Triple(cl.source, rdf + ("_" + idx), ce.value))
-        emit(cl.graph, new Triple(cl.source, ontolex.constituent, ce.value))
+        emit(cl.graph, new Triple(cl.source, decomp.constituent, ce.value))
         elements.remove(ce.node)
         if(ce.next != rdf.nil) {
           emitChain(elements(ce.next), idx + 1)
@@ -457,6 +481,16 @@ object monnet2w3c {
       }
       emitChain(elements(cl.head), 1)
     }
+
+    def findHeadCE(cl : ComponentElement) : ComponentElement = {
+      elements.values.find(_.next == cl.node) match {
+        case Some(ce) =>
+          findHeadCE(ce)
+        case None =>
+          cl
+      }
+    }
+
 
     def findCL(cl : ComponentElement) : Option[ComponentList] = {
       componentLists.values.find(_.head == cl.node) match {
@@ -485,10 +519,10 @@ object monnet2w3c {
       } else if(triple.getPredicate() == rdf.first) {
         elements.get(triple.getSubject()) match {
           case None =>
-            elements(triple.getSubject()) = ComponentElement(triple.getSubject(),
+            elements(triple.getSubject()) = ComponentElement(graph, triple.getSubject(),
               null, triple.getObject())
-          case Some(ComponentElement(n, next, _)) =>
-            val ce = ComponentElement(n, next, triple.getObject())
+          case Some(ComponentElement(graph, n, next, _)) =>
+            val ce = ComponentElement(graph, n, next, triple.getObject())
             findCL(ce) match {
               case Some(cl) =>
                 if(verifyCL(cl)) {
@@ -504,10 +538,10 @@ object monnet2w3c {
       } else if(triple.getPredicate() == rdf.rest) {
         elements.get(triple.getSubject()) match {
           case None =>
-            elements(triple.getSubject()) = ComponentElement(triple.getSubject(),
+            elements(triple.getSubject()) = ComponentElement(graph, triple.getSubject(),
               triple.getObject(), null)
-          case Some(ComponentElement(n, _, value)) =>
-            val ce = ComponentElement(n, triple.getObject(), value)
+          case Some(ComponentElement(graph, n, _, value)) =>
+            val ce = ComponentElement(graph, n, triple.getObject(), value)
             findCL(ce) match {
               case Some(cl) =>
                 if(verifyCL(cl)) {
